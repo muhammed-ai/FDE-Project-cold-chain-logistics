@@ -138,7 +138,7 @@ This is needed because the system expects a legacy enterprise-style table to exi
 
 This step is very important because the AI system is not only looking at live fleet data. It also needs to follow the company’s rules and procedures.
 
-## Why the SOP is needed
+## Why the SOP (Standard Operating Procedures ) is needed
 
 The system is meant to help with cold-chain operations, where a small mistake can become a serious compliance issue. A vehicle may be running normally on paper, but the real question is:
 
