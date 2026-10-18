@@ -279,31 +279,79 @@ This should fail.
 
 # Step 7: Test the core agent tools
 
-Now run the agent scripts in the project root or from the source folder.
+This is the step where you check whether the system really works as an AI assistant instead of just having separate pieces installed.
+
+The project has two main parts here:
+
+- `agent_tools.py`: this file defines the tools the AI can use
+- `orchestrator.py`: this file decides when to call those tools and how to combine the results
+
+Think of it like this:
+
+- the AI is the decision-maker
+- the tools are the helpers
+- the orchestrator is the manager in charge of calling the right helper at the right time
+
+## What the tools do
+
+The agent tools in this project are:
+
+- `query_telemetry_db`: reads live fleet/temperature data from SQL Server
+- `fetch_corridor_conditions`: checks weather and route conditions for a location
+- `search_compliance_sop`: searches the SOP documents in Pinecone for the relevant policy rule
+
+So when you ask a question, the model can gather facts from multiple sources and then answer more intelligently.
+
+## Example of how it works
+
+If you ask:
+
+```text
+Find any active shipments near Los Angeles (Latitude ~33.8, Longitude ~-118.1). Check the local weather there, and tell me if the current cargo temperature violates the SOP for fresh perishables.
+```
+
+the agent may do this:
+
+1. query the SQL database for nearby active shipments
+2. check the weather for that location
+3. look up the relevant SOP rule from Pinecone
+4. compare the temperature and conditions to the policy
+5. answer with a final recommendation
+
+This is the main idea behind the whole project: combining operational data + weather + compliance policy into one useful decision support agent.
+
+## Run the files
+
+From the project root, run:
 
 ```bash
 python src/agent_tools.py
 python src/orchestrator.py
 ```
 
-These are the core AI components:
+If these run without errors, you have confirmed that the tools and the agent orchestration are connected correctly.
 
-- `agent_tools.py`: defines the telemetry, weather, and SOP tools
-- `orchestrator.py`: connects the tools to the LLM and decides when to call them
+## Example prompts to test
 
-You can test it with prompts like:
-
-## Example prompt 1
+### Example prompt 1
 
 ```text
 Find any active shipments near Los Angeles (Latitude ~33.8, Longitude ~-118.1). Check the local weather there, and tell me if the current cargo temperature violates the SOP for fresh perishables.
 ```
 
-## Example prompt 2
+### Example prompt 2
 
 ```text
 I'm a new dispatcher on the night shift. Can you quickly explain the difference between a Tier 1 and Tier 2 escalation?
 ```
+
+### Example prompt 3
+
+```text
+Which vehicles have high risk and what is the recommended compliance action according to the SOP?
+```
+
+If the agent answers with information from SQL, weather, and the SOP document, then Step 7 is working correctly.
 
 ---
 
