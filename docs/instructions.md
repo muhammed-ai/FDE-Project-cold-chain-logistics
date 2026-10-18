@@ -351,6 +351,31 @@ Make sure:
 
 Check that the security script ran successfully and the agent login was created.
 
+## Apple Silicon / macOS pyodbc error: missing ODBC library
+
+If you are on Apple Silicon and the Python script fails before creating the table with an error similar to:
+
+```text
+ImportError: dlopen(...pyodbc...): Library not loaded: /opt/homebrew/opt/unixodbc/lib/libodbc.2.dylib
+```
+
+then your system is missing the `unixodbc` library that `pyodbc` needs.
+
+Fix it with:
+
+```bash
+brew install unixodbc
+export DYLD_LIBRARY_PATH="$(brew --prefix unixodbc)/lib:$DYLD_LIBRARY_PATH"
+```
+
+Then reopen the terminal and rerun:
+
+```bash
+python3 scripts/ingest_legacy_data.py
+```
+
+This issue is common on Apple Silicon because the ODBC library is not installed by default, even when SQL Server is already running.
+
 ---
 
 # Final note
