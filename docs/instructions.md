@@ -5,20 +5,29 @@
 - Download the dataset from 'data\source\data.txt'
 - Create and EC2 instance > docker container > mcr.microsoft.com/mssql/server:2022-latest
 - Spin up the Legacy MSSQL Server
+
+> Use the command that matches your operating system:
+> - Windows: use the `^` version
+> - macOS/Linux: use the `\` version
+> - EC2 or VM: use the volume-mounted version
+
 ```
 docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" -p 1433:1433 --name legacy-mssql -d mcr.microsoft.com/mssql/server:2022-latest
 
-# or multi-line in windows 
+# Windows: use this version if you're running in Command Prompt / PowerShell multiline syntax
+# The ^ character continues the command onto the next line.
 docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" ^
    -p 1433:1433 --name legacy-mssql ^
    -d mcr.microsoft.com/mssql/server:2022-latest
 
-# or multi-line unix
+# macOS / Linux: use this version if you're running in bash or zsh
+# The \ character continues the command onto the next line.
 docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" \
    -p 1433:1433 --name legacy-mssql \
    -d mcr.microsoft.com/mssql/server:2022-latest
 
-# or multi-line with volume inside EC2
+# EC2 / VM with persistent Docker volume
+# Use this when you want the database files to persist outside the container.
 docker run -v mssql_data:/var/opt/mssql \
   -e "ACCEPT_EULA=Y" \
   -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" \
