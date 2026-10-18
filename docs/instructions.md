@@ -176,6 +176,14 @@ The project stores policy documents in Pinecone so the AI can:
 
 This is useful because SOP documents are long and detailed. Pinecone helps the AI find the right chunk of text instead of reading the whole document manually every time.
 
+## Important note for local models
+
+This setup is using a local embedding model for the fallback path. That means the model must already be installed on the same machine where the Python script is running.
+
+In other words, if you run `python3.11 scripts/ingest_sop_pinecone.py` on your laptop, then the model files need to be available on that laptop. If you try to run the script on a different machine or server without the model installed, the ingestion will fail or the app will not be able to create the vector embeddings correctly.
+
+This is different from a cloud-based service, where the model is hosted remotely. In this local mode, the embedding model is downloaded and used directly on the device running the script.
+
 ## Create your Pinecone key
 
 1. Go to https://app.pinecone.io/
