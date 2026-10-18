@@ -1,3 +1,13 @@
+"""
+Purpose:
+    Ingest policy and SOP documents into a Pinecone vector index so the agent can retrieve
+    relevant compliance guidance through semantic search.
+
+Why this is needed:
+    The LLM needs factual operational rules. Instead of hardcoding rules, this script turns
+    policy documents into searchable chunks that can be queried by the agent at runtime.
+"""
+
 import os
 import hashlib
 import json

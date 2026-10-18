@@ -1,3 +1,12 @@
+"""
+Purpose:
+    Load the raw cold-chain telemetry CSV into a legacy Microsoft SQL Server table.
+
+Why this is needed:
+    The AI agent is not allowed to query the messy raw table directly. This script creates
+    the legacy data source that the later security-view layer can sanitize and expose safely.
+"""
+
 from pathlib import Path
 import pandas as pd
 import urllib

@@ -1,6 +1,8 @@
 -- ====================================================================
 -- FDE ENTERPRISE SECURITY & SEMANTIC LAYER SCRIPT
--- Purpose: Protect the legacy DB from LLM hallucinations and mutations
+-- Purpose: Protect the legacy DB from LLM hallucinations and mutations.
+-- Why this is needed: the AI agent should see only a sanitized view of the data,
+-- not the raw operational table that contains messy legacy records.
 -- ====================================================================
 
 -- 1. Create a dedicated schema for our clean AI views
