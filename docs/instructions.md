@@ -121,7 +121,7 @@ This project contains a raw CSV dataset that must be imported into SQL Server.
 From the project root, run:
 
 ```bash
-python scripts/ingest_legacy_data.py
+python3 scripts/ingest_legacy_data.py
 ```
 
 What this script does:
