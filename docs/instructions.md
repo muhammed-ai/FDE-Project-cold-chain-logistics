@@ -136,7 +136,45 @@ This is needed because the system expects a legacy enterprise-style table to exi
 
 # Step 5: Set up the compliance knowledge base
 
-The AI agent also uses SOP and policy documents. These are stored in Pinecone for semantic retrieval.
+This step is very important because the AI system is not only looking at live fleet data. It also needs to follow the company’s rules and procedures.
+
+## Why the SOP is needed
+
+The system is meant to help with cold-chain operations, where a small mistake can become a serious compliance issue. A vehicle may be running normally on paper, but the real question is:
+
+- Is this temperature within the allowed range?
+- Does this event count as a cold-chain incident?
+- What should the dispatcher do next according to policy?
+- Do we need to escalate this to a supervisor or compliance team?
+
+Those questions are not answered by SQL data alone. SQL gives you the facts, such as current temperature, route risk, or delay probability. The SOP gives you the rules that explain what the facts mean and what action is required.
+
+Without the SOP, the agent would be guessing. It might give a general answer, but it would not be grounded in the actual operating policy for the business.
+
+In this project, the SOP documents are stored in the `data/policy` folder. They are used to teach the AI the compliance logic.
+
+## What is Pinecone?
+
+Pinecone is a cloud vector database. In simple terms, it stores text in a special format that makes it easy to search by meaning, not just by exact words.
+
+For example, if someone asks:
+
+> “What should we do when temperature exceeds the safe range?”
+
+the system does not need to match the exact words “temperature exceeds the safe range.” It can search for similar content in the policy documents and retrieve the relevant SOP section.
+
+This is called semantic search or vector search.
+
+## Why Pinecone is used here
+
+The project stores policy documents in Pinecone so the AI can:
+
+- search the SOP by meaning
+- find the most relevant policy section quickly
+- ground its answer in actual operational rules
+- respond with policy-aware, compliance-safe recommendations
+
+This is useful because SOP documents are long and detailed. Pinecone helps the AI find the right chunk of text instead of reading the whole document manually every time.
 
 ## Create your Pinecone key
 
@@ -160,20 +198,33 @@ Embeddings_model=LOCAL
 Local_Embedding_Model=BAAI/bge-m3
 ```
 
-Then run:
+## Run the SOP ingestion script
+
+From the project root, run:
 
 ```bash
 python scripts/ingest_sop_pinecone.py
 ```
 
-What this does:
+What this script does:
 
 - reads the policy files in the `data/policy` directory
-- splits them into chunks
-- creates embeddings
-- stores them in Pinecone
+- splits the policy text into smaller chunks
+- converts each chunk into embeddings
+- stores those embeddings in Pinecone
+- makes them available for retrieval during agent conversations
 
-This is needed so the agent can answer policy and SOP-based questions instead of guessing.
+Why this matters:
+
+The AI can now answer questions like:
+
+- “What are the compliance steps for an incident?”
+- “What should an operator do if cargo temperature rises above threshold?”
+- “Which SOP section covers a route delay with possible spoilage risk?”
+
+instead of giving a generic answer based only on training data.
+
+This is the step that connects operational data with business rules and compliance policy.
 
 ---
 
