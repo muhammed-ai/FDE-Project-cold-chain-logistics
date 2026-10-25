@@ -357,7 +357,18 @@ If the agent answers with information from SQL, weather, and the SOP document, t
 
 # Step 8: Set up the audit log table
 
-This creates a small table where the app writes execution traces for the AI agent.
+This step creates a place in SQL Server to record the agent's activity. An audit log is a history of what the application did while handling a request.
+
+When the application runs, it can record information such as:
+
+- which conversation session an event belongs to
+- which part of the agent ran, such as the reasoner or a tool
+- which tool was requested, such as SQL telemetry or SOP search
+- the tool input, tool result, or final response text
+
+The audit log is useful for reviewing how an answer was produced, troubleshooting failed requests, and understanding which data sources the agent used. It is separate from the fleet telemetry table: it records agent activity, not shipment data.
+
+Complete Steps 2 and 6 first. SQL Server must be running, and Step 6 must have created the `FDE_VIEWS` schema and `USR_FDE_RO` database user. Connect to the `master` database in your SQL client using an administrator account such as `sa` before running this SQL.
 
 Open a new SQL query window and run:
 
@@ -374,26 +385,44 @@ CREATE TABLE FDE_VIEWS.AgentAuditLog (
 GRANT INSERT ON FDE_VIEWS.AgentAuditLog TO USR_FDE_RO;
 ```
 
-Why this is needed:
+The `CREATE TABLE` statement creates the log table. The `GRANT INSERT` statement gives the restricted agent account permission to add log entries; it does not itself grant permissions to read, update, or delete those entries. Run this setup once; if the table already exists, do not run the `CREATE TABLE` statement again.
 
-It lets the system track which tool was triggered, what data was passed in, and what the model returned.
+The Streamlit application writes audit entries to this table while requests are processed. The Security & Audit Logs view reads and displays the stored entries after an administrator authenticates.
+
+**Data handling note:** the log can contain tool inputs and outputs and the model's final responses. These may include operational details or excerpts from retrieved records and SOPs. Treat the log as operational data and restrict access appropriately; never put passwords, API keys, or other secrets into prompts.
+
+To verify the table was created, run this in the same database:
+
+```sql
+SELECT OBJECT_ID('FDE_VIEWS.AgentAuditLog', 'U') AS audit_table_id;
+```
+
+A non-`NULL` `audit_table_id` means SQL Server found the table.
 
 ---
 
 # Step 9: Run the user interface
 
-Start the Streamlit dashboard:
+This step launches the project's Streamlit web application. The interface is the main place to send questions to the agent; it connects the chat screen to the orchestrator and its SQL, weather, and SOP tools.
+
+Before starting it, confirm that SQL Server is running and that the setup steps for the data, Pinecone index, security view, and audit table have completed. The configured LLM must also be available: for example, start Ollama and ensure its configured model is installed if `Agent_llm=OLLAMA`, or configure the required credentials for a hosted model.
+
+From the project root, run:
 
 ```bash
-streamlit run src/ui.py
+python3.11 -m streamlit run src/ui.py
 ```
 
-This opens the cold-chain dispatch console where you can:
+Streamlit prints a local URL in the terminal, usually `http://localhost:8501`. Open that address in a browser. The Dispatch Console lets you:
 
 - chat with the agent
 - inspect tool inputs
 - review raw outputs
-- open security and audit views
+- open the Security & Audit Logs view to review activity recorded in Step 8
+
+Keep the terminal running while you use the application; it hosts the local web server. To stop the server, focus that terminal and press `Ctrl+C`.
+
+To check that the interface is working, submit a question that uses one or more of the configured data sources and confirm that the agent displays a response. If audit logging is configured, inspect the Security & Audit Logs view to see the recorded activity.
 
 ---
 
