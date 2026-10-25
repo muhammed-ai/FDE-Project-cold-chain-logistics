@@ -1,6 +1,6 @@
 # FDE Project Setup Guide
 
-This guide is written for beginners and follows the project in the correct order. If you are setting this up for the first time, follow the steps below in sequence.
+This guide documents the project setup process in the recommended order. Follow the steps below to configure the environment, load the data, and run the application.
 
 ## What this project does
 
