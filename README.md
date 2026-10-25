@@ -23,6 +23,40 @@ The project is intentionally structured around the idea of "chatting with enterp
 
 ## Core architecture
 
+```mermaid
+flowchart TD
+	subgraph Setup[Data setup]
+		CSV[Telemetry CSV] --> ImportSQL[ingest_legacy_data.py]
+		ImportSQL --> Raw[(SQL Server raw table)]
+		Raw --> SecureSetup[setup_security_and_view.sql]
+		SecureSetup --> View[(FDE_VIEWS.VW_ACTIVE_FLEET)]
+
+		SOP[Policy and SOP files] --> IngestSOP[ingest_sop_pinecone.py]
+		IngestSOP --> Embed[Embedding model]
+		Embed --> Index[(Pinecone SOP index)]
+	end
+
+	subgraph Runtime[Application runtime]
+		User[Dispatcher] --> UI[Streamlit UI]
+		UI --> Graph[LangGraph orchestrator]
+		Graph <--> LLM[Configured LLM<br/>Ollama, OpenAI, or DeepSeek]
+		Graph --> Tools[Agent tools]
+		Tools -->|Read curated fleet data| View
+		Tools -->|Search policy passages| Index
+		Tools -->|Request current conditions| Weather[Open-Meteo API]
+		View --> Tools
+		Index --> Tools
+		Weather --> Tools
+		Tools --> Graph
+		Graph --> UI
+		UI -->|Write tool activity and responses| Audit[(FDE_VIEWS.AgentAuditLog)]
+		Admin[Administrator] -->|Review logs| UI
+		UI -->|Read logs with admin authorization| Audit
+	end
+```
+
+The upper flow shows one-time or repeatable data preparation. During a chat, the Streamlit interface passes the dispatcher’s question to the orchestrator. The model can request tools to read the curated SQL view, search Pinecone for policy passages, or retrieve weather; results return to the model to produce a response. The UI also records selected tool activity and responses in the audit table.
+
 ### 1. Data ingestion layer
 The repo includes scripts to ingest:
 
