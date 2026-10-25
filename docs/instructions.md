@@ -1,10 +1,12 @@
-# FDE Project Setup Guide
+# FDE Project: Local Setup and Operations
 
-This guide documents the project setup process in the recommended order. Follow the steps below to configure the environment, load the data, and run the application.
+Use this guide to prepare the local environment, populate the project's data stores, configure access, and launch the application. The sequence follows the dependencies between those components.
 
-## What this project does
+> This repository is based on the [Cold Chain Logistics FDE Project](https://github.com/nimowhyca/cold-chain-logistics-FDE-Project). The steps below have been adapted to describe this checkout; consult the upstream repository for its original materials and history.
 
-This project lets you:
+## Project overview
+
+The application brings together several sources and services to support cold-chain operations:
 
 - load cold-chain fleet data into SQL Server
 - index policy documents for compliance retrieval
@@ -14,9 +16,9 @@ This project lets you:
 
 ---
 
-# Step 1: Prepare your environment
+# Step 1: Install prerequisites
 
-Before you begin, make sure you have:
+Install or prepare the following before setting up the application:
 
 - Docker Desktop installed
 - Python 3.12 installed
@@ -24,23 +26,23 @@ Before you begin, make sure you have:
 - access to a terminal
 - a SQL client such as VS Code SQL extension or Azure Data Studio
 
-Open a terminal in the project root and install Python dependencies:
+In a terminal opened at the project root, install the Python packages:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-If you do not have the required database driver installed, install it before running the project.
+The SQL Server ODBC driver is also required for Python-to-database connections. Install the driver and its operating-system dependencies if they are not already available.
 
 ---
 
-# Step 2: Start the Microsoft SQL Server container
+# Step 2: Launch SQL Server
 
-The project uses a local Microsoft SQL Server container to simulate the enterprise data source.
+The local SQL Server container provides the database used for the sample fleet records. Select the command for your environment.
 
 ## Option A: Local machine (macOS / Linux)
 
-Use this if you are running Docker Desktop on your own computer.
+For Docker Desktop on macOS or Linux, run:
 
 ```bash
 docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" \
@@ -51,7 +53,7 @@ docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" \
 
 ## Option B: Windows
 
-If you are on Windows and writing the command across multiple lines, use the caret style:
+In Windows PowerShell, use `^` to continue a command across lines:
 
 ```powershell
 docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" ^
@@ -61,7 +63,7 @@ docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=FdeEnterprisePass123!" ^
 
 ## Option C: EC2 / VM with persistent storage
 
-Use this if you want your SQL data to survive container restarts:
+To retain database files when the container is removed or recreated, attach a Docker volume:
 
 ```bash
 docker run -v mssql_data:/var/opt/mssql \
@@ -72,7 +74,7 @@ docker run -v mssql_data:/var/opt/mssql \
   -d mcr.microsoft.com/mssql/server:2022-latest
 ```
 
-### Verify the container started
+### Confirm SQL Server is running
 
 Run:
 
@@ -80,17 +82,17 @@ Run:
 docker ps
 ```
 
-You should see a container named `legacy-mssql` running.
+Look for a running container named `legacy-mssql` in the output.
 
 ---
 
-# Step 3: Connect to the database
+# Step 3: Open a SQL Server connection
 
-You can connect with the VS Code SQL extension or Azure Data Studio.
+Use Azure Data Studio or the VS Code SQL extension to connect to the container.
 
 ## Connection details
 
-Use these settings:
+Enter the following connection values:
 
 ```text
 Profile Name: legacy-mssql
@@ -104,94 +106,92 @@ Database: master
 Encrypt: Optional or False
 ```
 
-After connecting, run this query to confirm the database is working:
+After the connection succeeds, check whether the raw telemetry table is present and populated:
 
 ```sql
 SELECT COUNT(*) AS total_rows FROM dbo.TBL_SC_FLEET_HIST_RAW;
 ```
 
-If this fails, the dataset has not been loaded yet. Continue to the next step.
+If SQL Server reports that the table does not exist, continue to Step 4 to import the CSV.
 
 ---
 
-# Step 4: Load the raw telemetry dataset
+# Step 4: Import fleet telemetry
 
-This project contains a raw CSV dataset that must be imported into SQL Server.
+The source telemetry is provided as a CSV file. Import it into SQL Server before creating the agent's restricted view.
 
-From the project root, run:
+Run this command from the project root:
 
 ```bash
 python3 scripts/ingest_legacy_data.py
 ```
 
-What this script does:
+The import script performs three main operations:
 
 - reads the CSV file from the data folder
 - maps the raw fields into the legacy database schema
 - inserts the rows into the table `dbo.TBL_SC_FLEET_HIST_RAW`
 
-This is needed because the system expects a legacy enterprise-style table to exist before the AI layer can safely work with it.
+The next database setup step uses this table as its source and exposes selected fields to the agent through a separate view.
 
 ---
 
-# Step 5: Set up the compliance knowledge base
+# Step 5: Index compliance material
 
-This step is very important because the AI system is not only looking at live fleet data. It also needs to follow the company’s rules and procedures.
+Fleet readings describe what is happening; the operating procedure (SOP) describes how staff should respond. This step makes those procedures searchable by the agent.
 
-## Why the SOP (Standard Operating Procedures ) is needed
+## Role of the SOP (Standard Operating Procedure)
 
-The system is meant to help with cold-chain operations, where a small mistake can become a serious compliance issue. A vehicle may be running normally on paper, but the real question is:
+Cold-chain decisions depend on both sensor readings and handling requirements. A dispatcher may need to determine:
 
 - Is this temperature within the allowed range?
 - Does this event count as a cold-chain incident?
 - What should the dispatcher do next according to policy?
 - Do we need to escalate this to a supervisor or compliance team?
 
-Those questions are not answered by SQL data alone. SQL gives you the facts, such as current temperature, route risk, or delay probability. The SOP gives you the rules that explain what the facts mean and what action is required.
+SQL provides measured or calculated values such as temperature, route risk, and delay probability. The SOP supplies the procedures and thresholds used to interpret those values and select a response.
 
-Without the SOP, the agent would be guessing. It might give a general answer, but it would not be grounded in the actual operating policy for the business.
+Without relevant policy context, an LLM may produce a plausible general answer that does not reflect the organization's actual procedure. Retrieving the SOP gives the agent material to reference when forming its response.
 
-In this project, the SOP documents are stored in the `data/policy` folder. They are used to teach the AI the compliance logic.
+Policy source files for this repository are kept in `data/policy`.
 
-## What is Pinecone?
+## Pinecone's role
 
-Pinecone is a cloud vector database. In simple terms, it stores text in a special format that makes it easy to search by meaning, not just by exact words.
+Pinecone is a hosted vector database. The ingestion script stores numerical representations of policy text there so that searches can find passages related by meaning, rather than requiring an exact phrase match.
 
 For example, if someone asks:
 
 > “What should we do when temperature exceeds the safe range?”
 
-the system does not need to match the exact words “temperature exceeds the safe range.” It can search for similar content in the policy documents and retrieve the relevant SOP section.
+the search can locate policy passages about temperature excursions even if the SOP uses different wording. This meaning-based retrieval is commonly called semantic or vector search.
 
-This is called semantic search or vector search.
+## How the agent uses the index
 
-## Why Pinecone is used here
-
-The project stores policy documents in Pinecone so the AI can:
+The policy index allows the agent to:
 
 - search the SOP by meaning
 - find the most relevant policy section quickly
 - ground its answer in actual operational rules
 - respond with policy-aware, compliance-safe recommendations
 
-This is useful because SOP documents are long and detailed. Pinecone helps the AI find the right chunk of text instead of reading the whole document manually every time.
+The ingestion process divides longer documents into passages. Pinecone can then return the passages most relevant to a question, instead of requiring the whole document to be supplied each time.
 
-## Important note for local models
+## Local embedding model requirements
 
-This setup is using a local embedding model for the fallback path. That means the model must already be installed on the same machine where the Python script is running.
+With `Embeddings_model=LOCAL`, Python runs the embedding model on the computer executing the script. The model package and weights must be available on that computer.
 
-In other words, if you run `python3.11 scripts/ingest_sop_pinecone.py` on your laptop, then the model files need to be available on that laptop. If you try to run the script on a different machine or server without the model installed, the ingestion will fail or the app will not be able to create the vector embeddings correctly.
+For example, running `python3.11 scripts/ingest_sop_pinecone.py` on a laptop downloads or uses the model on that laptop. A separate server running the script needs its own access to the model files.
 
-This is different from a cloud-based service, where the model is hosted remotely. In this local mode, the embedding model is downloaded and used directly on the device running the script.
+This differs from a hosted embedding service, where requests are sent to a remote provider instead of running the model locally.
 
-## Create your Pinecone key
+## Configure Pinecone access
 
-1. Go to https://app.pinecone.io/
-2. Create or open an index/project
-3. Copy your API key
-4. Add it to your `.env` file
+1. Sign in at https://app.pinecone.io/.
+2. Create or select a Pinecone project.
+3. Copy its API key.
+4. Add the key to the project-root `.env` file.
 
-Your `.env` file should include values similar to:
+Set the relevant environment variables. The values below illustrate the expected names; use credentials and settings for your own environment:
 
 ```env
 PINECONE_API_KEY=your_key_here
@@ -206,87 +206,72 @@ Embeddings_model=LOCAL
 Local_Embedding_Model=BAAI/bge-m3
 ```
 
-## Run the SOP ingestion script
+## Index the policy files
 
-From the project root, run:
+From the project root, start the ingestion script:
 
 ```bash
 python scripts/ingest_sop_pinecone.py
 ```
 
-What this script does:
+The script reads files from `data/policy`, divides their content into passages, creates an embedding for each passage, and uploads the results to Pinecone. The agent searches these indexed passages at runtime.
 
-- reads the policy files in the `data/policy` directory
-- splits the policy text into smaller chunks
-- converts each chunk into embeddings
-- stores those embeddings in Pinecone
-- makes them available for retrieval during agent conversations
-
-Why this matters:
-
-The AI can now answer questions like:
+After indexing, the agent can retrieve policy context for questions such as:
 
 - “What are the compliance steps for an incident?”
 - “What should an operator do if cargo temperature rises above threshold?”
 - “Which SOP section covers a route delay with possible spoilage risk?”
 
-instead of giving a generic answer based only on training data.
-
-This is the step that connects operational data with business rules and compliance policy.
+This connects operational telemetry to the procedures used to interpret it.
 
 ---
 
-# Step 6: Create the secure SQL view for the agent
+# Step 6: Configure the agent's SQL access
 
-This step creates a clean, read-only view for the AI agent and blocks direct access to the messy raw table.
+This step creates a curated database view for agent queries and restricts the agent account from reading the raw source table directly.
 
-Open the SQL file:
+Open this SQL script in your SQL client:
 
 ```text
 scripts/setup_security_and_view.sql
 ```
 
-Then run it in SQL Server Management tools or the VS Code SQL editor.
+Connect as a SQL administrator to the `master` database and execute the script in Azure Data Studio, SQL Server Management Studio, or the VS Code SQL editor.
 
-This script creates:
+The script sets up these database objects and permissions:
 
 - a schema called `FDE_VIEWS`
 - a view called `FDE_VIEWS.VW_ACTIVE_FLEET`
 - a restricted login/user called `USR_FDE_RO`
 - explicit deny rules for the raw table
 
-Why this matters:
+The agent's database tool is intended to query the curated view rather than the underlying raw import. This separates the data the agent can use from the original table.
 
-The AI should only access clean, curated data, not the messy legacy table that contains the raw ingestion output.
+## Check the permissions
 
-## Validate the security layer
-
-Connect with the agent profile and test these queries:
+Reconnect using the agent account and try both queries. The first should return rows:
 
 ```sql
 SELECT TOP 5 * FROM FDE_VIEWS.VW_ACTIVE_FLEET;
 ```
 
-This should work.
-
+The second query is expected to be denied:
 ```sql
 SELECT TOP 5 * FROM dbo.TBL_SC_FLEET_HIST_RAW;
 ```
 
-This should fail.
-
 ---
 
-# Step 7: Test the core agent tools
+# Step 7: Exercise the agent and its tools
 
-This is the step where you check whether the system really works as an AI assistant instead of just having separate pieces installed.
+Use this step to verify that the model can work with the project's data tools, rather than only checking that each service was installed.
 
-The project has two main parts here:
+Two files coordinate this behavior:
 
 - `agent_tools.py`: this file defines the tools the AI can use
 - `orchestrator.py`: this file decides when to call those tools and how to combine the results
 
-Think of it like this:
+At a high level:
 
 - the AI is the decision-maker
 - the tools are the helpers
@@ -300,9 +285,9 @@ The agent tools in this project are:
 - `fetch_corridor_conditions`: checks weather and route conditions for a location
 - `search_compliance_sop`: searches the SOP documents in Pinecone for the relevant policy rule
 
-So when you ask a question, the model can gather facts from multiple sources and then answer more intelligently.
+The model can request one or more tools, receive their results, and use those results to form its response.
 
-## Example of how it works
+## Example request flow
 
 If you ask:
 
@@ -310,7 +295,7 @@ If you ask:
 Find any active shipments near Los Angeles (Latitude ~33.8, Longitude ~-118.1). Check the local weather there, and tell me if the current cargo temperature violates the SOP for fresh perishables.
 ```
 
-the agent may do this:
+For that question, the agent may:
 
 1. query the SQL database for nearby active shipments
 2. check the weather for that location
@@ -318,20 +303,20 @@ the agent may do this:
 4. compare the temperature and conditions to the policy
 5. answer with a final recommendation
 
-This is the main idea behind the whole project: combining operational data + weather + compliance policy into one useful decision support agent.
+This flow combines operational records, current corridor conditions, and policy guidance for a single response.
 
-## Run the files
+## Start the command-line test loop
 
-From the project root, run:
+Run these commands from the project root. The first runs each tool's standalone checks; the second starts the interactive agent:
 
 ```bash
 python src/agent_tools.py
 python src/orchestrator.py
 ```
 
-If these run without errors, you have confirmed that the tools and the agent orchestration are connected correctly.
+If the agent starts, enter a sample request at the `Dispatcher >` prompt. Depending on the question, it may need SQL Server, the Pinecone index, the configured LLM, or the weather API to be reachable.
 
-## Example prompts to test
+## Requests to try
 
 ### Example prompt 1
 
@@ -351,13 +336,13 @@ I'm a new dispatcher on the night shift. Can you quickly explain the difference 
 Which vehicles have high risk and what is the recommended compliance action according to the SOP?
 ```
 
-If the agent answers with information from SQL, weather, and the SOP document, then Step 7 is working correctly.
+Check the response and tool activity to confirm the agent is retrieving the expected information. A full test requires the relevant services and data sources to be configured and available.
 
 ---
 
-# Step 8: Set up the audit log table
+# Step 8: Create the agent audit table
 
-This step creates a place in SQL Server to record the agent's activity. An audit log is a history of what the application did while handling a request.
+Create a SQL Server table for records of the agent's activity. An audit log provides a trace of selected application events while a request is processed.
 
 When the application runs, it can record information such as:
 
@@ -366,7 +351,7 @@ When the application runs, it can record information such as:
 - which tool was requested, such as SQL telemetry or SOP search
 - the tool input, tool result, or final response text
 
-The audit log is useful for reviewing how an answer was produced, troubleshooting failed requests, and understanding which data sources the agent used. It is separate from the fleet telemetry table: it records agent activity, not shipment data.
+These records help with reviewing tool usage and responses and diagnosing problems. The audit table stores application activity, not fleet telemetry.
 
 Complete Steps 2 and 6 first. SQL Server must be running, and Step 6 must have created the `FDE_VIEWS` schema and `USR_FDE_RO` database user. Connect to the `master` database in your SQL client using an administrator account such as `sa` before running this SQL.
 
@@ -385,9 +370,9 @@ CREATE TABLE FDE_VIEWS.AgentAuditLog (
 GRANT INSERT ON FDE_VIEWS.AgentAuditLog TO USR_FDE_RO;
 ```
 
-The `CREATE TABLE` statement creates the log table. The `GRANT INSERT` statement gives the restricted agent account permission to add log entries; it does not itself grant permissions to read, update, or delete those entries. Run this setup once; if the table already exists, do not run the `CREATE TABLE` statement again.
+`CREATE TABLE` creates the audit table. `GRANT INSERT` allows the restricted agent account to add entries; it does not grant read, update, or delete permissions. Run the table-creation statement once, and skip it if the table already exists.
 
-The Streamlit application writes audit entries to this table while requests are processed. The Security & Audit Logs view reads and displays the stored entries after an administrator authenticates.
+During requests, the Streamlit application writes selected events to the table. An administrator can view stored entries from the Security & Audit Logs section of the UI.
 
 **Data handling note:** the log can contain tool inputs and outputs and the model's final responses. These may include operational details or excerpts from retrieved records and SOPs. Treat the log as operational data and restrict access appropriately; never put passwords, API keys, or other secrets into prompts.
 
@@ -401,9 +386,9 @@ A non-`NULL` `audit_table_id` means SQL Server found the table.
 
 ---
 
-# Step 9: Run the user interface
+# Step 9: Launch the web application
 
-This step launches the project's Streamlit web application. The interface is the main place to send questions to the agent; it connects the chat screen to the orchestrator and its SQL, weather, and SOP tools.
+Start the Streamlit application to use the chat interface. It sends questions to the orchestrator, which can access the configured SQL, weather, and SOP tools.
 
 Before starting it, confirm that SQL Server is running and that the setup steps for the data, Pinecone index, security view, and audit table have completed. The configured LLM must also be available: for example, start Ollama and ensure its configured model is installed if `Agent_llm=OLLAMA`, or configure the required credentials for a hosted model.
 
@@ -413,22 +398,22 @@ From the project root, run:
 python3.11 -m streamlit run src/ui.py
 ```
 
-Streamlit prints a local URL in the terminal, usually `http://localhost:8501`. Open that address in a browser. The Dispatch Console lets you:
+The terminal prints the address where Streamlit is serving the app, commonly `http://localhost:8501`. Open that address in a browser. From the Dispatch Console, you can:
 
 - chat with the agent
 - inspect tool inputs
 - review raw outputs
 - open the Security & Audit Logs view to review activity recorded in Step 8
 
-Keep the terminal running while you use the application; it hosts the local web server. To stop the server, focus that terminal and press `Ctrl+C`.
+Leave the terminal open while using the app; it runs the local web server. Press `Ctrl+C` in that terminal to stop it.
 
-To check that the interface is working, submit a question that uses one or more of the configured data sources and confirm that the agent displays a response. If audit logging is configured, inspect the Security & Audit Logs view to see the recorded activity.
+For a basic check, submit a question and confirm that the agent responds. If the audit table and permissions are configured, open Security & Audit Logs to review the recorded events.
 
 ---
 
-# Step 10: Optional deployment on a Linux VM
+# Step 10: Optional Linux VM deployment
 
-The project also includes a deployment example for running the UI on a remote Linux machine.
+The commands below outline one way to run the interface on a remote Ubuntu VM. Adapt the repository URL, credentials, network rules, and service configuration to your environment before using this for deployment.
 
 ```bash
 sudo apt update && sudo apt install -y python3-pip python3-venv git
@@ -441,7 +426,7 @@ pip install -r requirements.txt
 streamlit run src/ui.py
 ```
 
-Then install the required Microsoft SQL ODBC driver:
+Install the Microsoft SQL Server ODBC driver and unixODBC packages required by the Python database connector:
 
 ```bash
 curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
@@ -451,15 +436,15 @@ sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
 sudo apt-get install -y unixodbc-dev
 ```
 
-Finally, create a systemd service file to keep the Streamlit app running in the background.
+For unattended operation, configure and enable a `systemd` service to manage the Streamlit process.
 
 ---
 
-# Common troubleshooting tips
+# Troubleshooting
 
 ## The browser shows “This page isn’t working” on localhost:1433
 
-This is normal. SQL Server is not a web app. You must connect with a SQL client, not a browser.
+SQL Server does not serve web pages. Use a SQL client such as Azure Data Studio to connect to this port.
 
 ## Docker container is not running
 
@@ -485,7 +470,7 @@ Make sure:
 
 ## The database denies access
 
-Check that the security script ran successfully and the agent login was created.
+Confirm that `setup_security_and_view.sql` completed successfully and created the agent login/user and its permissions.
 
 ## Apple Silicon / macOS pyodbc error: missing ODBC library
 
@@ -495,7 +480,7 @@ If you are on Apple Silicon and the Python script fails before creating the tabl
 ImportError: dlopen(...pyodbc...): Library not loaded: /opt/homebrew/opt/unixodbc/lib/libodbc.2.dylib
 ```
 
-then your system is missing the `unixodbc` library that `pyodbc` needs.
+the operating system may not be able to locate the unixODBC library required by `pyodbc`.
 
 Fix it with:
 
@@ -504,19 +489,17 @@ brew install unixodbc
 export DYLD_LIBRARY_PATH="$(brew --prefix unixodbc)/lib:$DYLD_LIBRARY_PATH"
 ```
 
-Then reopen the terminal and rerun:
+Open a new terminal session so it receives the updated library path, then retry the import:
 
 ```bash
 python3 scripts/ingest_legacy_data.py
 ```
 
-This issue is common on Apple Silicon because the ODBC library is not installed by default, even when SQL Server is already running.
+Installing or exposing the host ODBC library is separate from running SQL Server in Docker; the container can be healthy while Python still cannot load its local driver dependency.
 
----
+## Setup sequence recap
 
-# Final note
-
-If you follow the steps in order, you will move from:
+The setup proceeds through these stages:
 
 1. database setup
 2. legacy data import
@@ -525,4 +508,4 @@ If you follow the steps in order, you will move from:
 5. agent testing
 6. UI launch
 
-to a working cold-chain logistics decision-support system.
+Completing the required stages makes the data sources, agent workflow, and web interface available for local testing.
