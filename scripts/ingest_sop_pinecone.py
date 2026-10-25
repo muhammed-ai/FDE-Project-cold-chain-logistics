@@ -37,7 +37,8 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 if not PINECONE_API_KEY:
     raise ValueError("Missing PINECONE_API_KEY in .env")
 
-# Set up clean production data cache path
+# The local hash cache remembers which files have already been indexed, so an
+# unchanged SOP does not need to be embedded and uploaded again on every run.
 cache_dir = project_root / "data" / "cache"
 cache_dir.mkdir(parents=True, exist_ok=True)
 HASH_CACHE_FILE = cache_dir / "ingestion_hash_cache.json"
@@ -55,6 +56,8 @@ if HASH_CACHE_FILE.exists():
 # ==========================================
 EMBEDDINGS_MODEL_SETTING = os.getenv("Embeddings_model", "LOCAL").strip().upper()
 
+# The embedding model and vector dimension must match between ingestion and search.
+# Separate index names keep OpenAI and local-model vectors from being mixed.
 if EMBEDDINGS_MODEL_SETTING == "OPENAI":
     print("🤖 Mode: Utilizing Cloud OpenAI Embeddings (1536 Dim)...")
     embeddings = OpenAIEmbeddings()
@@ -82,6 +85,8 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 existing_indexes = pc.list_indexes().names()
 
 # Self-healing verification in case an index was created with a wrong legacy dimension
+# Pinecone cannot compare vectors of different sizes, so a dimension mismatch needs
+# a new index before documents can be added with the selected embedding model.
 if INDEX_NAME in existing_indexes:
     desc = pc.describe_index(INDEX_NAME)
     if desc.dimension != TARGET_DIMENSION:
@@ -105,6 +110,7 @@ vector_store = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
 # 4. ROBUST POLYMORPHIC PARSER
 # ==========================================
 def parse_and_chunk_document(doc_path: Path) -> list[Document]:
+    # Split long documents into smaller passages that are easier to retrieve by meaning.
     ext = doc_path.suffix.lower()
     raw_chunks: list[Document] = []
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=60)
@@ -169,6 +175,7 @@ def parse_and_chunk_document(doc_path: Path) -> list[Document]:
 # 5. INCREMENTAL PIPELINE WITH BATCHING
 # ==========================================
 policy_dir = project_root / "data" / "policy"
+# Collect supported policy formats so the same ingestion flow can process each one.
 target_patterns = ["*.md", "*.txt", "*.pdf", "*.csv", "*.xlsx"]
 current_files = {}
 for pattern in target_patterns:
@@ -182,6 +189,7 @@ cache_modified = False
 
 cached_filenames = set(hash_cache.keys())
 current_filenames = set(current_files.keys())
+# Remove indexed chunks for files that were deleted from the policy folder.
 deleted_files = cached_filenames - current_filenames
 
 for deleted_file in deleted_files:
@@ -193,6 +201,7 @@ for deleted_file in deleted_files:
         print(f"  ❌ Failed to purge {deleted_file}: {e}")
 
 for file_name, file_path in current_files.items():
+    # Compare file contents rather than timestamps to detect real policy changes.
     file_bytes = file_path.read_bytes()
     file_hash = hashlib.md5(file_bytes).hexdigest()
     updated_cache[file_name] = file_hash
@@ -217,6 +226,7 @@ for file_name, file_path in current_files.items():
             
         explicit_ids = []
         for idx, chunk in enumerate(chunks):
+            # Metadata lets search results identify which policy file each passage came from.
             chunk.metadata["source_file"] = file_name
             chunk.metadata["file_format"] = file_path.suffix.replace(".", "").upper()
             chunk.metadata["document_type"] = "Compliance Asset"
@@ -226,6 +236,7 @@ for file_name, file_path in current_files.items():
         total_chunks = len(chunks)
         print(f"  📤 Upserting {total_chunks} chunk(s) in batches of {batch_size}...")
         
+        # Upload smaller groups to avoid sending the whole document in one request.
         for i in range(0, total_chunks, batch_size):
             batch_docs = chunks[i : i + batch_size]
             batch_ids = explicit_ids[i : i + batch_size]

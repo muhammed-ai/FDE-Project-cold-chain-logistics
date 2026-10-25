@@ -9,6 +9,9 @@ from langchain_core.tools import tool
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 
+# These functions are the actions the AI can request; they connect it to data
+# sources, but the orchestrator decides when each action should run.
+
 # ==========================================
 # 1. ENVIRONMENT & DYNAMIC INDEX ATTACHMENT
 # ==========================================
@@ -48,6 +51,8 @@ db_password = os.getenv("SQL_AGENT_PASSWORD")
 if not PINECONE_API_KEY:
     raise ValueError("CRITICAL: Ensure PINECONE_API_KEY is present in your active .env profile.")
 
+# The embedding model must match the model used during SOP ingestion, so this
+# selects the matching Pinecone index as well as the matching embedding setup.
 if EMBEDDINGS_MODEL_SETTING == "OPENAI":
     print("🤖 Mode: Connecting to Cloud OpenAI Index (1536 Dim Space)...")
     embeddings = OpenAIEmbeddings()
@@ -71,6 +76,8 @@ else :
     INDEX_NAME = "fde-sop-index-local"
 
 vector_store = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
+# The retriever turns a question into a vector search and returns the closest
+# matching SOP chunks. Here, k=2 asks Pinecone for the two closest matches.
 retriever = vector_store.as_retriever(search_kwargs={"k": 2})
 
 # ==========================================
@@ -86,6 +93,7 @@ def query_telemetry_db(sql_query: str) -> str:
     Risk_Classification, Delay_Probability, Port_Congestion_Level, Route_Risk_Index.
     Always write standard T-SQL queries.
     """
+    # Build the SQL Server connection using the restricted agent account from .env.
     connection_string = (
             f"DRIVER={{ODBC Driver 18 for SQL Server}};"
             f"SERVER={db_host},{db_port};"
@@ -101,6 +109,7 @@ def query_telemetry_db(sql_query: str) -> str:
     engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
     
     try:
+        # This simple guard rejects non-SELECT statements before sending SQL to the DB.
         if not sql_query.strip().upper().startswith("SELECT"):
             return "SECURITY BLOCK: Only SELECT operations are authorized on this view."
             
@@ -127,6 +136,7 @@ def fetch_corridor_conditions(latitude: float, longitude: float) -> str:
     Provides temperature, wind speed, and computed corridor congestion index.
     """
     try:
+        # Open-Meteo supplies current weather for the coordinates provided by the agent.
         url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current_weather=true"
         response = requests.get(url, timeout=6)
         response.raise_for_status()
@@ -135,6 +145,7 @@ def fetch_corridor_conditions(latitude: float, longitude: float) -> str:
         temp = payload.get("temperature", "N/A")
         wind = payload.get("windspeed", 0.0)
         
+        # Demo rule: stronger wind is treated as a higher corridor disruption risk.
         congestion_index = 8.5 if wind > 10.0 else 2.5
         status_note = "High Transit Disruption" if wind > 10.0 else "Corridor Normal"
         
@@ -155,6 +166,7 @@ def search_compliance_sop(query: str) -> str:
     Use this to retrieve regulatory thresholds, cold-chain breach mitigations, and rerouting rules.
     """
     try:
+        # Search indexed policy text by meaning and return the matching source passages.
         matched_docs = retriever.invoke(query)
         if not matched_docs:
             return "No matching compliance clauses found."
@@ -170,6 +182,7 @@ def search_compliance_sop(query: str) -> str:
 # 3. LOCAL VERIFICATION
 # ==========================================
 if __name__ == "__main__":
+    # Running this file directly exercises each tool independently for troubleshooting.
     print("\n--- Testing Tool 1: SQL Telemetry View ---")
     print(query_telemetry_db.invoke("SELECT TOP 2 Latitude, Longitude, Current_Temperature_C FROM FDE_VIEWS.VW_ACTIVE_FLEET"))
     

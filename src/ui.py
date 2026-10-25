@@ -10,6 +10,8 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from langchain_core.messages import HumanMessage, ToolMessage
 
+"""Streamlit interface for chatting with the agent and reviewing its audit trail."""
+
 # ==========================================
 # 1. IMMEDIATE PATH & ENVIRONMENT RESOLUTION
 # ==========================================
@@ -21,7 +23,7 @@ if str(project_root) not in sys.path:
 
 load_dotenv(project_root / ".env")
 
-# Import the compiled graph and tools list dynamically
+# Import the graph assembled by the orchestrator; the UI sends user messages to it.
 from src.orchestrator import fde_agent
 
 # ==========================================
@@ -49,6 +51,7 @@ log_engine = create_engine(f"mssql+pyodbc:///?odbc_connect={log_params}")
 
 def write_audit_log(session_id, node_name, tool_name, content):
     """Silently writes agent execution traces to the SQL audit table using agent permissions."""
+    # Audit failures are reported but do not stop the user-facing chat response.
     try:
         with log_engine.connect() as conn:
             conn.execute(text("""
@@ -85,6 +88,8 @@ st.markdown("""
 # ==========================================
 # 4. MULTI-USER STATE & THREAD MANAGEMENT
 # ==========================================
+# Streamlit reruns this file after interactions; session_state preserves a user's
+# conversation ID and visible messages across those reruns.
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 
@@ -108,6 +113,7 @@ with st.sidebar:
     
     st.markdown("---")
     if st.button("🗑️ Purge Dispatch Workspace Session", use_container_width=True):
+        # Start a fresh conversation by clearing the UI history and assigning a new ID.
         st.session_state.ui_messages = []
         st.session_state.thread_id = str(uuid.uuid4())
         st.rerun()
@@ -123,6 +129,7 @@ if app_mode == "🧊 Dispatch Console":
     st.title("Cold-Chain Incident Control Dashboard")
     st.caption("Production Data Engineering Pipeline • Real-Time Decision Optimization Platform")
 
+    # Redraw earlier turns each time Streamlit reruns the page.
     for entry in st.session_state.ui_messages:
         with st.chat_message(entry["role"], avatar="👤" if entry["role"] == "user" else "🤖"):
             if "traces" in entry:
@@ -147,6 +154,8 @@ if app_mode == "🧊 Dispatch Console":
             current_traces = [] 
             
             with st.status("🧠 Initializing Core Reasoner Node...", expanded=True) as status:
+                # Stream graph events so the interface can display each tool request,
+                # tool result, and final model response as they happen.
                 events = fde_agent.stream(
                     {"messages": [HumanMessage(content=user_input)]}, 
                     config=thread_config,
@@ -159,7 +168,7 @@ if app_mode == "🧊 Dispatch Console":
                         if node_name == "reasoner":
                             latest_msg = node_state["messages"][-1]
                             
-                            # A. Intercept Tool Call Requests (Inputs)
+                            # The model asks for a tool by returning its name and arguments.
                             if hasattr(latest_msg, "tool_calls") and latest_msg.tool_calls:
                                 status.update(label="🧠 Agent generated tool parameters...")
                                 for tool_call in latest_msg.tool_calls:
@@ -180,7 +189,7 @@ if app_mode == "🧊 Dispatch Console":
                                         content=json.dumps(tool_call['args'])
                                     )
                             
-                            # B. Intercept Final Generation
+                            # A message with content is displayed as the assistant's answer.
                             if latest_msg.content:
                                 final_response = latest_msg.content
                                 status.update(label="📝 Generating Operational Resolution Report...")
@@ -246,6 +255,7 @@ elif app_mode == "🛡️ Security & Audit Logs":
         submit_admin = st.form_submit_button("Authenticate & Load Logs", use_container_width=True)
 
     if submit_admin:
+        # The audit viewer requires admin credentials; chat uses the restricted account.
         expected_admin_user = os.getenv("SQL_ADMIN_USER")
         expected_admin_pass = os.getenv("SQL_ADMIN_PASSWORD")
         
@@ -264,6 +274,7 @@ elif app_mode == "🛡️ Security & Audit Logs":
                 admin_engine = create_engine(f"mssql+pyodbc:///?odbc_connect={admin_params}")
                 
                 with admin_engine.connect() as conn:
+                    # Show newest audit events first so recent agent activity is easiest to inspect.
                     query = """
                         SELECT LogID, Timestamp, SessionID, NodeExecuted, ToolName, Content 
                         FROM FDE_VIEWS.AgentAuditLog 

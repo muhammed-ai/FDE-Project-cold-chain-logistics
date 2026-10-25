@@ -10,6 +10,8 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 
+"""Connect the selected language model to the project's tools and run the chat loop."""
+
 # ==========================================
 # 1. SETUP & PATH RESOLUTION
 # ==========================================
@@ -24,12 +26,14 @@ from src.agent_tools import query_telemetry_db, fetch_corridor_conditions, searc
 load_dotenv(project_root / ".env")
 
 class AgentState(TypedDict):
+    # LangGraph passes this shared message history between the model and tool steps.
     messages: Annotated[list[BaseMessage], add_messages]
 
 # ==========================================
 # 2. FACTORY INITIALIZATION: AGENT REASONER LLM
 # ==========================================
 
+# This setting selects the chat/reasoning model. Embeddings are configured separately.
 AGENT_LLM_SETTING = os.getenv("Agent_llm", "OLLAMA").strip().upper()
 
 if AGENT_LLM_SETTING == "OPENAI":
@@ -56,16 +60,24 @@ elif AGENT_LLM_SETTING == "DEEPSEEK":
 
 else:  # FALLBACK / DEFAULT RUNNER MODE
     print("🤗 Brain Mode: Local Fallback Activated. Binding Local Ollama (qwen2.5:7b)...")
-    from langchain_community.chat_models import ChatOllama
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError as exc:
+        raise ImportError(
+            "The installed LangChain version no longer includes the old Ollama import path. "
+            "Install the supported package with: python3.11 -m pip install langchain-ollama"
+        ) from exc
     llm = ChatOllama(model="qwen2.5:7b", temperature=0, num_predict=1024)
 
 fde_tools = [query_telemetry_db, fetch_corridor_conditions, search_compliance_sop]
+# Tool binding lets the model request these functions; it does not run them automatically.
 llm_with_tools = llm.bind_tools(fde_tools)
 
 # ==========================================
 # 3. GRAPH ARCHITECTURE ASSEMBLY
 # ==========================================
 def reasoning_node(state: AgentState):
+    # Read the conversation and either answer directly or request one of the tools.
     response = llm_with_tools.invoke(state["messages"])
     return {"messages": [response]}
 
@@ -74,10 +86,13 @@ graph_builder = StateGraph(AgentState)
 graph_builder.add_node("reasoner", reasoning_node)
 graph_builder.add_node("tools", ToolNode(fde_tools))
 
+# A turn starts with the model. If it requests a tool, run it and send its result
+# back to the model; otherwise tools_condition ends the turn with the answer.
 graph_builder.add_edge(START, "reasoner")
 graph_builder.add_conditional_edges("reasoner", tools_condition)
 graph_builder.add_edge("tools", "reasoner")
 
+# MemorySaver keeps conversation state by thread_id while this process is running.
 fde_agent = graph_builder.compile(checkpointer=MemorySaver())
 
 # ==========================================
@@ -89,7 +104,7 @@ if __name__ == "__main__":
     print(f"   Configured Execution: [LLM: {AGENT_LLM_SETTING}] -> [Embeddings: {os.getenv('Embeddings_model', 'LOCAL')}]")
     print("="*55 + "\n")
     
-    # Load the business-structured system prompt from the external file
+    # Load the project instructions that guide the model's role and response style.
     prompt_path = project_root / "src" / "prompts" / "system_prompt.txt"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
@@ -100,6 +115,7 @@ if __name__ == "__main__":
 
     system_prompt = SystemMessage(content=system_instructions)
     
+    # Reusing this ID lets the agent keep this terminal conversation's message history.
     thread_config = {"configurable": {"thread_id": "production_test_1"}}
     fde_agent.invoke({"messages": [system_prompt]}, config=thread_config)
     
@@ -108,6 +124,7 @@ if __name__ == "__main__":
         if user_input.lower() in ['exit', 'quit']:
             break
             
+        # Stream graph updates so the terminal can show tool activity and final text.
         events = fde_agent.stream({"messages": [("user", user_input)]}, config=thread_config, stream_mode="updates")
         for event in events:
             for node_name, node_state in event.items():

@@ -14,9 +14,10 @@ import os
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 
-# __file__ is 'experiment/phase-0/ingest_legacy_data.py'
-script_dir = Path(__file__).resolve().parent # points to experiment/phase-0
-project_root = script_dir.parents[0] # climbs up 1 levels to project root
+# Find the project folder relative to this script so paths work regardless of
+# which directory the terminal is currently using.
+script_dir = Path(__file__).resolve().parent
+project_root = script_dir.parents[0]
 
 load_dotenv(project_root / ".env")
 
@@ -27,11 +28,12 @@ db_port = os.getenv("SQL_SERVER_PORT", "1433")
 db_user = os.getenv("SQL_ADMIN_USER")
 db_password = os.getenv("SQL_ADMIN_PASSWORD")
 
-# 1. Load the raw dataset
+# 1. Read the source CSV that contains the fleet telemetry records.
 print(f"Loading CSV from {data_path}...")
 df = pd.read_csv(data_path)
 
-# 2. Map clean columns to a messy 2000s legacy enterprise schema
+# 2. Rename selected readable CSV columns to mimic the older field names used
+# by a legacy enterprise system.
 legacy_mapping = {
     'timestamp': 'TS_UTC',
     'vehicle_gps_latitude': 'V_LAT',
@@ -44,13 +46,13 @@ legacy_mapping = {
     'route_risk_level': 'RT_RSK_IDX'
 }
 
-# Keep only the columns we mapped for this demo and rename them
+# Keep only the fields needed by this demo, then apply the legacy column names.
 df_legacy = df[list(legacy_mapping.keys())].rename(columns=legacy_mapping)
 
 # Add a fake ingestion flag to make it look like an automated legacy system
 df_legacy['SYS_INGEST_FLAG'] = 'Y'
 
-# 3. Connect to Docker MSSQL Server
+# 3. Connect to the local SQL Server using administrator credentials from .env.
 print("Connecting to legacy MSSQL Database...")
 # Use the pyodbc driver. (Ensure you have ODBC Driver 17 or 18 for SQL Server installed on your OS)
 connection_string = (
@@ -67,7 +69,8 @@ params = urllib.parse.quote_plus(connection_string)
 
 engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
-# 4. Ingest data into the messy table name
+# 4. Replace the demo raw table with this CSV's rows. Later setup creates a
+# separate safe view for the agent to read instead of exposing this raw table.
 table_name = 'TBL_SC_FLEET_HIST_RAW'
 print(f"Ingesting into {table_name}. This may take a minute...")
 df_legacy.to_sql(table_name, engine, if_exists='replace', index=False, schema='dbo')
