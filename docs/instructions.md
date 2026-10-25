@@ -409,6 +409,22 @@ Leave the terminal open while using the app; it runs the local web server. Press
 
 For a basic check, submit a question and confirm that the agent responds. If the audit table and permissions are configured, open Security & Audit Logs to review the recorded events.
 
+## Sample prompts for the Dispatch Console
+
+Enter these questions in the chat box in the browser. They cover policy lookup, fleet-risk data, and a combined operational request:
+
+```text
+What are the temperature rules for fresh perishables?
+```
+```text
+Which vehicles have high risk, and what compliance action does the SOP recommend?
+```
+```text
+Find active shipments near Los Angeles (latitude 33.8, longitude -118.1), check the local weather, and tell me whether any cargo temperatures violate the SOP for fresh perishables.
+```
+
+The first prompt mainly tests SOP retrieval. The second asks the agent to combine fleet data with policy guidance. The third may use SQL, the weather service, and SOP search. Results depend on the configured data and services being available.
+
 ---
 
 # Step 10: Optional Linux VM deployment
@@ -418,8 +434,8 @@ The commands below outline one way to run the interface on a remote Ubuntu VM. A
 ```bash
 sudo apt update && sudo apt install -y python3-pip python3-venv git
 cd /home/ubuntu
-git clone https://github.com/nimowhyca/cold-chain-logistics-FDE-Project.git
-cd cold-chain-logistics-FDE-Project
+git clone https://github.com/muhammed-ai/FDE-Project-cold-chain-logistics.git
+cd FDE-Project-cold-chain-logistics
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
