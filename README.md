@@ -113,7 +113,7 @@ The system prompt in [src/prompts/system_prompt.txt](src/prompts/system_prompt.t
 
 - [README.md](README.md) — project overview and setup
 - [requirements.txt](requirements.txt) — Python dependencies
-- [docs/instrutions.md](docs/instrutions.md) — operational setup and deployment guide
+- [docs/instructions.md](docs/instructions.md) — operational setup and deployment guide
 - [scripts/](scripts/) — data ingestion and database setup utilities
 - [src/](src/) — agent logic, orchestration, UI, and prompts
 - [data/](data/) — raw telemetry and policy documents
@@ -130,7 +130,7 @@ The system prompt in [src/prompts/system_prompt.txt](src/prompts/system_prompt.t
 
 ## Setup highlights
 
-The workflow described in [docs/instrutions.md](docs/instrutions.md) includes:
+The workflow described in [docs/instructions.md](docs/instructions.md) includes:
 
 - spinning up a local MSSQL container
 - loading legacy fleet data
