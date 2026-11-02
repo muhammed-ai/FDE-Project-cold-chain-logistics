@@ -70,29 +70,42 @@ else:  # FALLBACK / DEFAULT RUNNER MODE
     llm = ChatOllama(model="qwen2.5:7b", temperature=0, num_predict=1024)
 
 fde_tools = [query_telemetry_db, fetch_corridor_conditions, search_compliance_sop]
-# Tool binding lets the model request these functions; it does not run them automatically.
+# Tool binding tells the model which Python functions are available during reasoning.
+# This does not execute the tools by itself; the model returns a tool-call request,
+# the ToolNode runs the matching function, and its result is sent back through the graph.
 llm_with_tools = llm.bind_tools(fde_tools)
 
 # ==========================================
 # 3. GRAPH ARCHITECTURE ASSEMBLY
 # ==========================================
 def reasoning_node(state: AgentState):
-    # Read the conversation and either answer directly or request one of the tools.
+    # The state is a shared message history. reasoning_node appends the model's
+    # latest response, which can be text, a tool request, or another reasoning step.
     response = llm_with_tools.invoke(state["messages"])
     return {"messages": [response]}
 
 print("⚙️ Compiling LangGraph FDE Orchestrator...")
+# StateGraph defines the workflow as a small state machine. AgentState is the data
+# type carried between its nodes, while add_messages controls how message lists merge.
 graph_builder = StateGraph(AgentState)
 graph_builder.add_node("reasoner", reasoning_node)
+# ToolNode maps tool names to the Python functions in fde_tools and executes requests.
 graph_builder.add_node("tools", ToolNode(fde_tools))
 
-# A turn starts with the model. If it requests a tool, run it and send its result
-# back to the model; otherwise tools_condition ends the turn with the answer.
+# A user turn follows this path:
+#   START -> reasoner -> tool requested? -> tools -> reasoner -> final answer
+# tools_condition examines the reasoner's latest message. It sends tool calls to the
+# tools node and ends the turn when the model has enough information to answer.
 graph_builder.add_edge(START, "reasoner")
 graph_builder.add_conditional_edges("reasoner", tools_condition)
 graph_builder.add_edge("tools", "reasoner")
 
-# MemorySaver keeps conversation state by thread_id while this process is running.
+# MemorySaver keeps conversations in memory for the lifetime of this process.
+# The thread_id passed by the caller groups messages into a separate conversation.
+# MemorySaver is not a database and does not persist histories after the process stops.
+
+# compile() turns the graph definition into a runnable agent object used by both
+# the terminal chat loop and the Streamlit UI.
 fde_agent = graph_builder.compile(checkpointer=MemorySaver())
 
 # ==========================================
@@ -101,22 +114,32 @@ fde_agent = graph_builder.compile(checkpointer=MemorySaver())
 if __name__ == "__main__":
     print("\n" + "="*55)
     print("🚀 FDE Supply Chain Orchestrator State Machine Online")
-    print(f"   Configured Execution: [LLM: {AGENT_LLM_SETTING}] -> [Embeddings: {os.getenv('Embeddings_model', 'LOCAL')}]")
+    print(f"   Configured Execution: [LLM: {AGENT_LLM_SETTING}] -> [Embeddings: {os.getenv('Embeddings_model', 'LOCAL')}] ")
     print("="*55 + "\n")
     
-    # Load the project instructions that guide the model's role and response style.
+    # system_prompt.txt defines the agent's role, required tool order, and output format.
+    # It acts as a system instruction for the terminal-test conversation rather than as a
+    # Python function. The model sees its text before processing the dispatcher's question.
     prompt_path = project_root / "src" / "prompts" / "system_prompt.txt"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             system_instructions = f.read()
     except FileNotFoundError:
+        # This fallback keeps the terminal usable if the prompt file is missing, but it
+        # omits the project's intended role, operational sequence, and response template.
         print(f"Error: Could not find {prompt_path}")
         system_instructions = "You are a helpful AI assistant." # Basic fallback
 
+    # SystemMessage marks this content as high-level instructions for the model. It
+    # establishes role and output constraints; it is separate from HumanMessage input.
     system_prompt = SystemMessage(content=system_instructions)
     
-    # Reusing this ID lets the agent keep this terminal conversation's message history.
+    # Reusing one thread_id preserves this terminal chat's history between user turns.
+    # Different IDs create different conversations and therefore different message context.
     thread_config = {"configurable": {"thread_id": "production_test_1"}}
+
+    # Invoking the graph with only the system message initializes the thread and allows
+    # MemorySaver to establish the conversation state before the chat loop begins.
     fde_agent.invoke({"messages": [system_prompt]}, config=thread_config)
     
     while True:
@@ -124,7 +147,8 @@ if __name__ == "__main__":
         if user_input.lower() in ['exit', 'quit']:
             break
             
-        # Stream graph updates so the terminal can show tool activity and final text.
+        # A dispatcher prompt is converted to a human/user message. The graph appends it
+        # to the saved history, so later turns can use earlier context in the same thread.
         events = fde_agent.stream({"messages": [("user", user_input)]}, config=thread_config, stream_mode="updates")
         for event in events:
             for node_name, node_state in event.items():
@@ -133,4 +157,4 @@ if __name__ == "__main__":
                 elif node_name == "reasoner":
                     latest_msg = node_state["messages"][-1]
                     if latest_msg.content:
-                        print(f"\n🤖 FDE Agent:\n{latest_msg.content}")
+                        print(f"\n🤗 FDE Agent:\n{latest_msg.content}")

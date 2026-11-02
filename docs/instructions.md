@@ -2,8 +2,6 @@
 
 Use this guide to prepare the local environment, populate the project's data stores, configure access, and launch the application. The sequence follows the dependencies between those components.
 
-> This repository is based on the [Cold Chain Logistics FDE Project](https://github.com/nimowhyca/cold-chain-logistics-FDE-Project). The steps below have been adapted to describe this checkout; consult the upstream repository for its original materials and history.
-
 ## Project overview
 
 The application brings together several sources and services to support cold-chain operations:
